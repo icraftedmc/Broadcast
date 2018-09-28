@@ -1,0 +1,25 @@
+plugins {
+    id 'org.spongepowered.plugin' version '0.8.1'
+}
+
+group 'eu.icrafted'
+version '1.0-SNAPSHOT'
+description = 'Broadcast plugin for global, server and player based messages'
+project.ext.authors = 'iCrafted'
+
+repositories {
+    mavenCentral();
+    jcenter()
+    maven {
+        name = 'forge'
+        url = 'http://files.minecraftforge.net/maven'
+    }
+    maven {
+        name = 'Sponge maven repo'
+        url = 'http://repo.spongepowered.org/maven'
+    }
+}
+
+dependencies {
+    compile 'org.spongepowered:spongeapi:7.1.0'
+}
