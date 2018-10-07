@@ -121,7 +121,6 @@ public class Broadcast {
     {
         List<Long> processedMessages = new ArrayList<>();
 
-        // todo: fluff: clickable text
         try {
             logger.info("Reloading tasks...");
             if (taskGlobal != null) {
@@ -131,6 +130,8 @@ public class Broadcast {
             if (taskPlayer != null) {
                 taskPlayer.cancel();
             }
+
+            String messagePrefix = config.getNode("general", "prefix").getString("");
 
             // create schedule task
             taskPlayer = game.getScheduler().createTaskBuilder().interval(15, TimeUnit.SECONDS).execute(t -> {
@@ -145,9 +146,7 @@ public class Broadcast {
 
                             if (server == null || server.equalsIgnoreCase(config.getNode("general", "server").toString())) {
                                 Text text = TextSerializers.JSON.deserialize(message);
-                                p.sendMessage(TextSerializers.FORMATTING_CODE.deserialize(config.getNode("general", "prefix").getString()).concat(text));
-
-                                //logger.info("Send Message to player '" + p.getName() + "' " + message);
+                                p.sendMessage(TextSerializers.FORMATTING_CODE.deserialize(messagePrefix).concat(text));
 
                                 executeSql("DELETE FROM messages WHERE id=" + id);
                             }
@@ -173,15 +172,27 @@ public class Broadcast {
                             messages = querySql(query);
                         }
 
-                        while (messages.next()) {
+                        // get the first avaliable mesage
+                        messages.first();
+
+                        // get the message from the database
+                        String message = messages.getString("message");
+                        Text text = TextSerializers.JSON.deserialize(message);
+                        game.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(messagePrefix).concat(text));
+
+                        // add the message to the processed list
+                        processedMessages.add(messages.getLong("id"));
+
+                        // OLD CODE, deprecated
+                        /*while (messages.next()) {
                             String message = messages.getString("message");
 
                             Text text = TextSerializers.JSON.deserialize(message);
-                            game.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(config.getNode("general", "prefix").getString()).concat(text));
+                            game.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(messagePrefix).concat(text));
 
                             processedMessages.add(messages.getLong("id"));
                             break;
-                        }
+                        }*/
                     }
                 } catch(SQLException ex) {
                     ex.printStackTrace();
@@ -200,7 +211,9 @@ public class Broadcast {
             Files.createDirectories(configDir);
             if(!defConfig.exists()) {
                 logger.info("Creating configuration file... :)");
-                defConfig.createNewFile();
+                if(!defConfig.createNewFile()) {
+                    logger.error("Failed creating file, already exists...");
+                }
             }
 
             // get the configuration manager
@@ -239,27 +252,47 @@ public class Broadcast {
 
     private ResultSet querySql(String query)
     {
+        PreparedStatement stmt = null;
+        ResultSet results = null;
         try {
-            PreparedStatement stmt = conn.prepareStatement(query);
-            ResultSet results = stmt.executeQuery();
-            stmt = null;
-
-            return results;
+            stmt = conn.prepareStatement(query);
+            results = stmt.executeQuery();
         } catch(SQLException ex) {
             ex.printStackTrace();
+        } finally {
+            try {
+                if(stmt != null) {
+                    stmt.close();
+                }
+            } catch(SQLException ex) {
+                ex.printStackTrace();
+            }
         }
 
-        return null;
+        return results;
     }
 
-    private void executeSql(String query)
+    private boolean executeSql(String query)
     {
+        PreparedStatement stmt = null;
+        boolean result = false;
+
         try {
-            PreparedStatement stmt = conn.prepareStatement(query);
-            boolean result = stmt.execute();
-            stmt = null;
+            stmt = conn.prepareStatement(query);
+            stmt.closeOnCompletion();
+            result = stmt.execute();
         } catch(SQLException ex) {
             ex.printStackTrace();
+        } finally {
+            try {
+                if(stmt != null) {
+                    stmt.close();
+                }
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
         }
+
+        return result;
     }
 }
