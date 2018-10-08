@@ -175,21 +175,21 @@ public class Broadcast {
 
                     ResultSet messages = querySql(query);
                     if(messages != null) {
-                        if (messages.getFetchSize() == 0) {
+                        if (!messages.first()) {
                             processedMessages.clear();
                             messages = querySql(query);
                         }
 
                         // get the first avaliable mesage
-                        messages.first();
+                        if(messages.first()) {
+                            // get the message from the database
+                            String message = messages.getString("message");
+                            Text text = TextSerializers.JSON.deserialize(message);
+                            game.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(messagePrefix).concat(text));
 
-                        // get the message from the database
-                        String message = messages.getString("message");
-                        Text text = TextSerializers.JSON.deserialize(message);
-                        game.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(messagePrefix).concat(text));
-
-                        // add the message to the processed list
-                        processedMessages.add(messages.getLong("id"));
+                            // add the message to the processed list
+                            processedMessages.add(messages.getLong("id"));
+                        }
 
                         // close the sql connection
                         messages.close();
