@@ -57,7 +57,7 @@ public class Broadcast {
 
     // sql
     private SqlService sql;
-    private Connection conn;
+    //private Connection conn;
 
     // scheduler
     private Task taskPlayer;
@@ -72,7 +72,7 @@ public class Broadcast {
             initConfig();
 
             // open the SQL connection
-            initSqlConnection();
+            //initSqlConnection();
 
             // load scheduler
             initScheduler();
@@ -90,14 +90,14 @@ public class Broadcast {
         logger.info("Stopping, iCrafted broadcast...");
 
         // close the connection to the database server
-        try {
+        /*try {
             if (conn != null && !conn.isClosed()) {
                 conn.close();
                 conn = null;
             }
         } catch(SQLException ex) {
             ex.printStackTrace();
-        }
+        }*/
     }
 
     @Listener
@@ -108,7 +108,7 @@ public class Broadcast {
             initConfig();
 
             // open the SQL connection
-            initSqlConnection();
+            //initSqlConnection();
 
             // load scheduler
             initScheduler();
@@ -132,6 +132,7 @@ public class Broadcast {
             }
 
             String messagePrefix = config.getNode("general", "prefix").getString("");
+            String serverIdentification = config.getNode("general", "server").getString();
 
             // create schedule task
             taskPlayer = game.getScheduler().createTaskBuilder().interval(15, TimeUnit.SECONDS).execute(t -> {
@@ -139,17 +140,24 @@ public class Broadcast {
                 for (Player p : game.getServer().getOnlinePlayers()) {
                     try {
                         ResultSet playerMessages = querySql("SELECT id,message,server FROM messages WHERE playeruuid='" + p.getUniqueId().toString() + "'");
-                        while (playerMessages.next()) {
-                            String server = playerMessages.getString("server");
-                            String message = playerMessages.getString("message");
-                            long id = playerMessages.getLong("id");
 
-                            if (server == null || server.equalsIgnoreCase(config.getNode("general", "server").toString())) {
-                                Text text = TextSerializers.JSON.deserialize(message);
-                                p.sendMessage(TextSerializers.FORMATTING_CODE.deserialize(messagePrefix).concat(text));
+                        try {
+                            while (playerMessages.next()) {
+                                String server = playerMessages.getString("server");
+                                String message = playerMessages.getString("message");
+                                long id = playerMessages.getLong("id");
 
-                                executeSql("DELETE FROM messages WHERE id=" + id);
+                                if (server == null || server.equalsIgnoreCase(serverIdentification)) {
+                                    Text text = TextSerializers.JSON.deserialize(message);
+                                    p.sendMessage(TextSerializers.FORMATTING_CODE.deserialize(messagePrefix).concat(text));
+
+                                    executeSql("DELETE FROM messages WHERE id=" + id);
+                                }
                             }
+                        } catch(SQLException ex) {
+                            ex.printStackTrace();
+                        } finally {
+                            playerMessages.close();
                         }
                     } catch (SQLException ex) {
                         ex.printStackTrace();
@@ -163,7 +171,7 @@ public class Broadcast {
             taskGlobal = game.getScheduler().createTaskBuilder().interval(interval, TimeUnit.SECONDS).execute(t -> {
                 // get global and server targeted messages
                 try {
-                    String query = "SELECT id,message,server FROM messages WHERE " + (processedMessages.size() > 0 ? " id NOT IN(" + StringUtils.join(processedMessages, ",") + ") AND" : "") + " playeruuid IS NULL AND (server='" + config.getNode("general", "server").toString() + "' OR server IS NULL) ORDER BY `order` ASC";
+                    String query = "SELECT id,message,server FROM messages WHERE " + (processedMessages.size() > 0 ? " id NOT IN(" + StringUtils.join(processedMessages, ",") + ") AND" : "") + " playeruuid IS NULL AND (server='" + serverIdentification + "' OR server IS NULL) ORDER BY `order` ASC";
 
                     ResultSet messages = querySql(query);
                     if(messages != null) {
@@ -183,16 +191,8 @@ public class Broadcast {
                         // add the message to the processed list
                         processedMessages.add(messages.getLong("id"));
 
-                        // OLD CODE, deprecated
-                        /*while (messages.next()) {
-                            String message = messages.getString("message");
-
-                            Text text = TextSerializers.JSON.deserialize(message);
-                            game.getServer().getBroadcastChannel().send(TextSerializers.FORMATTING_CODE.deserialize(messagePrefix).concat(text));
-
-                            processedMessages.add(messages.getLong("id"));
-                            break;
-                        }*/
+                        // close the sql connection
+                        messages.close();
                     }
                 } catch(SQLException ex) {
                     ex.printStackTrace();
@@ -237,23 +237,29 @@ public class Broadcast {
         }
     }
 
-    private void initSqlConnection()
+    private Connection getConnection()
     {
         if(sql == null) {
             sql = Sponge.getServiceManager().provide(SqlService.class).get();
         }
+
+        Connection conn = null;
 
         try {
             conn = sql.getDataSource("jdbc:mysql://" + config.getNode("database", "username").getString() + ":" + config.getNode("database", "password").getString() + "@" + config.getNode("database", "server").getString() + "/" + config.getNode("database", "database").getString()).getConnection();
         } catch(SQLException ex) {
             ex.printStackTrace();
         }
+
+        return conn;
     }
 
     private ResultSet querySql(String query)
     {
         PreparedStatement stmt = null;
         ResultSet results = null;
+        Connection conn = getConnection();
+
         try {
             stmt = conn.prepareStatement(query);
             results = stmt.executeQuery();
@@ -264,6 +270,8 @@ public class Broadcast {
                 if(stmt != null) {
                     stmt.close();
                 }
+
+                conn.close();
             } catch(SQLException ex) {
                 ex.printStackTrace();
             }
@@ -275,6 +283,7 @@ public class Broadcast {
     private boolean executeSql(String query)
     {
         PreparedStatement stmt = null;
+        Connection conn = getConnection();
         boolean result = false;
 
         try {
@@ -288,6 +297,8 @@ public class Broadcast {
                 if(stmt != null) {
                     stmt.close();
                 }
+
+                conn.close();
             } catch (SQLException ex) {
                 ex.printStackTrace();
             }
